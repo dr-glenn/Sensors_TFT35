@@ -5,10 +5,14 @@ sensor that has ever reported data, then prunes rows older than the
 retention window.
 """
 
+import logging
 import sqlite3
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from sensor_cache import PI_DEVICE_NAME
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = "sensors.db"
 RETENTION_DAYS = 30
@@ -71,6 +75,31 @@ def save_snapshot(conn: sqlite3.Connection, snapshot: dict) -> None:
         rows,
     )
     conn.commit()
+
+
+def load_history(sensor_id: str, hours: int = 24, db_path: str = DB_PATH) -> list:
+    """Return [(saved_at, temperature_f, humidity), ...] for one sensor over
+    the last `hours`, oldest first. `saved_at` is a naive local datetime.
+
+    Opens its own read-only connection: the shared one from init_db() is
+    written to by the MQTT thread. A missing/unreadable DB yields [] so the
+    display can just say "no data" (e.g. the display.py demo has no DB).
+    """
+    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat(timespec="seconds")
+    try:
+        conn = sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            rows = conn.execute(
+                """SELECT saved_at, temperature_f, humidity FROM readings
+                   WHERE sensor_id = ? AND saved_at >= ? ORDER BY saved_at""",
+                (sensor_id, cutoff),
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        logger.warning("Could not read history for %s from %s", sensor_id, db_path, exc_info=True)
+        return []
+    return [(datetime.fromisoformat(saved_at), temp_f, humidity) for saved_at, temp_f, humidity in rows]
 
 
 def prune_old(conn: sqlite3.Connection, retention_days: int = RETENTION_DAYS) -> None:

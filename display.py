@@ -10,7 +10,9 @@ import tkinter as tk
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from sensor_cache import SensorCache
+from history_view import HistoryView
+from sensor_cache import PI_DEVICE_NAME, SensorCache
+from theme import BG_COLOR, BOX_COLOR, STALE_COLOR, STALE_TEXT_COLOR, TEXT_COLOR
 
 WINDOW_WIDTH = 480
 WINDOW_HEIGHT = 320
@@ -28,14 +30,6 @@ REFRESH_INTERVAL_MS = 2 * 1000
 CLOCK_TICK_MS = 1000
 
 DISPLAY_TZ = ZoneInfo("America/Los_Angeles")
-
-#BG_COLOR = "#1e1e1e"    # entire application window
-#BOX_COLOR = "#2d2d2d"   # sensor display boxes
-BG_COLOR = "#101010"    # entire application window
-BOX_COLOR = "#000050"   # sensor display boxes
-STALE_COLOR = "#555555"
-TEXT_COLOR = "#ffffff"
-STALE_TEXT_COLOR = "#999999"
 
 
 class SensorDisplay:
@@ -94,7 +88,20 @@ class SensorDisplay:
             value_label = tk.Label(frame, font=("Helvetica", 16), bg=BOX_COLOR, fg=TEXT_COLOR, justify="left")
             value_label.pack()
 
-            self.boxes.append({"frame": frame, "name_label": name_label, "value_label": value_label})
+            # sensor_id/title are filled in by _refresh_boxes; sensor_id None = nothing to chart.
+            box = {"frame": frame, "name_label": name_label, "value_label": value_label,
+                   "sensor_id": None, "title": ""}
+            self.boxes.append(box)
+            # Labels sit on top of the frame and swallow clicks, so bind all three.
+            for widget in (frame, name_label, value_label):
+                widget.bind("<Button-1>", lambda event, box=box: self._open_history(box))
+
+        # Overlays the dashboard when a box is tapped; created last so it stacks on top.
+        self.history = HistoryView(self.root)
+
+    def _open_history(self, box: dict) -> None:
+        if box["sensor_id"] is not None:
+            self.history.show(box["sensor_id"], box["title"])
 
     def set_on_quit(self, callback) -> None:
         """Register the callback the on-screen [X] button invokes."""
@@ -123,6 +130,8 @@ class SensorDisplay:
         for box, data in zip(self.boxes, box_data):
             bg = STALE_COLOR if data["stale"] else BOX_COLOR
             fg = STALE_TEXT_COLOR if data["stale"] else TEXT_COLOR
+            box["sensor_id"] = data["sensor_id"]
+            box["title"] = data["name"]
             box["frame"].configure(bg=bg)
             box["name_label"].configure(text=data["name"], bg=bg, fg=fg)
             box["value_label"].configure(text=data["value_text"], bg=bg, fg=fg)
@@ -138,12 +147,13 @@ class SensorDisplay:
             reading = snapshot["shelly"][dev_name]
             boxes.append({
                 "name": dev_name,
+                "sensor_id": dev_name,
                 "value_text": f"{reading['temperature_f']:.1f}°F\n{reading['humidity']:.0f}% RH",
                 "stale": reading["stale"],
             })
 
         while len(boxes) < MAX_SHELLY_BOXES:
-            boxes.append({"name": "(no sensor)", "value_text": "--", "stale": True})
+            boxes.append({"name": "(no sensor)", "sensor_id": None, "value_text": "--", "stale": True})
 
         pi = snapshot["pi"]
         lines = []
@@ -155,6 +165,7 @@ class SensorDisplay:
             lines.append(f"PM2.5: {pi['pm25']}")
         boxes.append({
             "name": "Pi (BME280 / AQ)",
+            "sensor_id": PI_DEVICE_NAME,
             "value_text": "\n".join(lines) if lines else "--",
             "stale": pi["stale"],
         })

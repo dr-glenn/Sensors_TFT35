@@ -27,6 +27,9 @@ Sensor sources:
   not a raw framebuffer). Draws to the 480x320 window — current time plus one box per sensor (6 boxes
   total: 5 Shelly + 1 combined BME280/air-quality box, showing temp/humidity/pressure and pm25
   together).
+- **History page** (`history_view.py`): tapping a sensor box overlays a 24-hour temperature (left axis) +
+  humidity (right axis) line chart for that sensor, read from the SQLite `readings` table via
+  `storage.load_history`. Drawn on a plain `tk.Canvas` (no matplotlib). `[< Back]` returns to the dashboard.
 - **Update cadence**: the display polls the cache on a short timer (a couple of seconds) so Shelly
   readings show up on screen as soon as they arrive, since Shelly posts many times per minute. This is
   independent of the SQLite save cadence below.
